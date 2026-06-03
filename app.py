@@ -1,12 +1,12 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import json
 import os
-from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
 
-# Dosya yolu (app.py ile aynı klasörde)
+# Aynı dizindeki txt dosyasını oku
 DOSYA_YOLU = os.path.join(os.path.dirname(__file__), 'turknetrinex.txt')
 
 def verileri_yukle():
@@ -18,120 +18,91 @@ def verileri_yukle():
             print("❌ Dosya boş!")
             return []
         
-        # JSON'u yükle
+        # JSON'u parse et
         veri = json.loads(icerik)
         
         # Eğer gelen veri sözlük (dict) ise listeye çevir
         if isinstance(veri, dict):
-            veritabani = [veri]
+            return [veri]
         elif isinstance(veri, list):
-            veritabani = veri
+            return veri
         else:
             print("❌ Bilinmeyen format")
             return []
-        
-        print(f"✅ {len(veritabani)} kayıt başarıyla yüklendi!")
-        return veritabani
-        
+            
+    except FileNotFoundError:
+        print(f"❌ Dosya bulunamadı: {DOSYA_YOLU}")
+        return []
     except json.JSONDecodeError as e:
         print(f"❌ JSON hatası: {e}")
         return []
     except Exception as e:
-        print(f"❌ Dosya okuma hatası: {e}")
+        print(f"❌ Hata: {e}")
         return []
 
 # Veritabanını yükle
-veritabani = verileri_yukle()
+VERITABANI = verileri_yukle()
+print(f"✅ {len(VERITABANI)} kayıt yüklendi!")
 
-# Ana sayfa
 @app.route('/')
-def ana_sayfa():
+def home():
     return jsonify({
-        "api": "Turknet Müşteri Sorgu API",
-        "durum": "Aktif",
-        "kayit_sayisi": len(veritabani),
-        "endpointler": {
-            "ad_soyad_sorgu": "/sorgula?ad=BEYZANUR&soyad=KOSEOGLU",
-            "tc_sorgu": "/sorgula?tc=10001763200",
-            "hat_no_sorgu": "/sorgula?hatno=1780341975",
-            "tum_veriler": "/tumveriler"
+        "status": "API Calisiyor",
+        "kayit_sayisi": len(VERITABANI),
+        "endpoints": {
+            "/tumveriler": "Tum verileri goster",
+            "/sorgula?ad=X&soyad=Y": "Ad soyad sorgula",
+            "/sorgula?tc=X": "TC sorgula",
+            "/sorgula?hatno=X": "Hat no sorgula"
         }
     })
 
-# Tüm verileri göster
 @app.route('/tumveriler')
-def tum_veriler():
-    return jsonify({
-        "toplam_kayit": len(veritabani),
-        "veriler": veritabani
-    })
+def tumveriler():
+    return jsonify({"toplam": len(VERITABANI), "veriler": VERITABANI})
 
-# Ana sorgu endpoint'i (GET ile)
 @app.route('/sorgula')
 def sorgula():
-    ad = request.args.get('ad', '').upper().strip()
-    soyad = request.args.get('soyad', '').upper().strip()
-    tc = request.args.get('tc', '').strip()
-    hatno = request.args.get('hatno', '').strip()
+    ad = request.args.get('ad', '').upper()
+    soyad = request.args.get('soyad', '').upper()
+    tc = request.args.get('tc', '')
+    hatno = request.args.get('hatno', '')
     
-    # Ad-soyad sorgusu
+    if not VERITABANI:
+        return jsonify({"hata": "Veritabanı boş! turknetrinex.txt dosyasını kontrol et."}), 503
+    
     if ad and soyad:
-        sonuc = []
-        for musteri in veritabani:
-            musteri_ad = musteri.get('AD', '').upper()
-            musteri_soyad = musteri.get('SOYAD', '').upper()
-            if musteri_ad == ad and musteri_soyad == soyad:
-                sonuc.append(musteri)
-        
-        if not sonuc:
-            return jsonify({"bulunan": 0, "mesaj": f"{ad} {soyad} bulunamadı"})
-        return jsonify({"bulunan": len(sonuc), "sonuclar": sonuc})
-    
-    # TC sorgusu
+        sonuc = [v for v in VERITABANI if v.get('AD', '').upper() == ad and v.get('SOYAD', '').upper() == soyad]
     elif tc:
-        sonuc = [m for m in veritabani if m.get('TC_KIMLIK') == tc]
-        if not sonuc:
-            return jsonify({"bulunan": 0, "mesaj": f"TC {tc} bulunamadı"})
-        return jsonify({"bulunan": len(sonuc), "sonuclar": sonuc})
-    
-    # Hat No sorgusu
+        sonuc = [v for v in VERITABANI if v.get('TC_KIMLIK') == tc]
     elif hatno:
-        sonuc = [m for m in veritabani if m.get('HAT_NO') == hatno]
-        if not sonuc:
-            return jsonify({"bulunan": 0, "mesaj": f"Hat No {hatno} bulunamadı"})
-        return jsonify({"bulunan": len(sonuc), "sonuclar": sonuc})
-    
+        sonuc = [v for v in VERITABANI if v.get('HAT_NO') == hatno]
     else:
-        return jsonify({
-            "hata": "Geçersiz sorgu!",
-            "ornek_kullanim": [
-                "/sorgula?ad=BEYZANUR&soyad=KOSEOGLU",
-                "/sorgula?tc=10001763200",
-                "/sorgula?hatno=1780341975"
-            ]
-        }), 400
+        return jsonify({"hata": "Kullanım: ?ad=BEYZANUR&soyad=KOSEOGLU veya ?tc=10001763200 veya ?hatno=1780341975"}), 400
+    
+    return jsonify({"bulunan": len(sonuc), "sonuclar": sonuc})
 
-# POST metodları da ekleyelim (alternatif)
+# POST metodları da eklendi
 @app.route('/sorgu/adsoyad', methods=['POST'])
-def sorgu_adsoyad_post():
+def sorgu_adsoyad():
     data = request.get_json()
     ad = data.get('ad', '').upper()
     soyad = data.get('soyad', '').upper()
-    sonuc = [m for m in veritabani if m.get('AD', '').upper() == ad and m.get('SOYAD', '').upper() == soyad]
+    sonuc = [v for v in VERITABANI if v.get('AD', '').upper() == ad and v.get('SOYAD', '').upper() == soyad]
     return jsonify({"bulunan": len(sonuc), "sonuclar": sonuc})
 
 @app.route('/sorgu/tc', methods=['POST'])
-def sorgu_tc_post():
+def sorgu_tc():
     data = request.get_json()
     tc = data.get('tc', '')
-    sonuc = [m for m in veritabani if m.get('TC_KIMLIK') == tc]
+    sonuc = [v for v in VERITABANI if v.get('TC_KIMLIK') == tc]
     return jsonify({"bulunan": len(sonuc), "sonuclar": sonuc})
 
 @app.route('/sorgu/hatno', methods=['POST'])
-def sorgu_hatno_post():
+def sorgu_hatno():
     data = request.get_json()
     hatno = data.get('hatno', '')
-    sonuc = [m for m in veritabani if m.get('HAT_NO') == hatno]
+    sonuc = [v for v in VERITABANI if v.get('HAT_NO') == hatno]
     return jsonify({"bulunan": len(sonuc), "sonuclar": sonuc})
 
 if __name__ == '__main__':
