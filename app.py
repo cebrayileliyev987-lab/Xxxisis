@@ -8,7 +8,7 @@ app = Flask(__name__)
 veritabani = []
 
 # GitHub'dan verileri çek
-GITHUB_URL = "https://raw.githubusercontent.com/SENIN_KULLANICI_ADIN/REPO_ADIN/main/turknetrinex.txt"
+GITHUB_URL = "https://raw.githubusercontent.com/cebrayileliyev987-lab/Xxxisis/main/turknetrinex.txt"
 
 def verileri_yukle():
     global veritabani
