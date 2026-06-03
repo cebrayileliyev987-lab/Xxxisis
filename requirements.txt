@@ -1,12 +1,6 @@
-
----
-
-## 📦 **Gereksinimler (requirements.txt)**
-
-```txt
 pyTelegramBotAPI==4.15.0
 requests==2.31.0
 PyGithub==2.1.1
 psutil==5.9.6
-flask==3.0.0
-flask-cors==4.0.0
+Flask==3.0.0
+Flask-CORS==4.0.0
