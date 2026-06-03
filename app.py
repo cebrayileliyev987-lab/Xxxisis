@@ -6,115 +6,133 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# JSON dosyasının yolu (app.py ile aynı klasörde)
-JSON_DOSYA = os.path.join(os.path.dirname(__file__), 'turknetrinex.json')
+JSON_PATH = os.path.join(os.path.dirname(__file__), 'turknetrinex.json')
 
-def verileri_yukle():
+def json_yukle():
     try:
-        with open(JSON_DOSYA, 'r', encoding='utf-8') as f:
-            veri = json.load(f)
+        with open(JSON_PATH, 'r', encoding='utf-8') as f:
+            icerik = f.read().strip()
         
-        # Eğer gelen veri dict ise listeye çevir
+        # JSON'u yükle (alt alta olabilir)
+        veri = json.loads(icerik)
+        
+        # Dict ise listeye çevir
         if isinstance(veri, dict):
-            veritabani = [veri]
+            return [veri]
         elif isinstance(veri, list):
-            veritabani = veri
+            return veri
         else:
-            veritabani = []
-        
-        print(f"✅ {len(veritabani)} kayıt yüklendi!")
-        return veritabani
-        
+            return []
+            
     except FileNotFoundError:
-        print(f"❌ Dosya bulunamadı: {JSON_DOSYA}")
+        print(f"❌ Dosya bulunamadı: {JSON_PATH}")
         return []
     except json.JSONDecodeError as e:
         print(f"❌ JSON hatası: {e}")
         return []
 
 # Veritabanını yükle
-VERITABANI = verileri_yukle()
+VERITABANI = json_yukle()
+print(f"✅ {len(VERITABANI)} kayıt yüklendi!")
 
 @app.route('/')
 def home():
     return jsonify({
         "status": "API Calisiyor",
         "kayit_sayisi": len(VERITABANI),
-        "veri_kaynagi": "turknetrinex.json",
         "endpoints": {
-            "/tumveriler": "Tum verileri goster",
-            "/sorgula?ad=X&soyad=Y": "Ad soyad sorgula",
-            "/sorgula?tc=X": "TC sorgula",
-            "/sorgula?hatno=X": "Hat no sorgula"
+            "/tumveriler": "Tüm verileri getir",
+            "/sorgula?ad=X&soyad=Y": "Ad soyad ile sorgula (tüm veriyi getirir)",
+            "/sorgula?tc=X": "TC ile sorgula (tüm veriyi getirir)",
+            "/sorgula?hatno=X": "Hat no ile sorgula (tüm veriyi getirir)"
         }
     })
 
 @app.route('/tumveriler')
 def tumveriler():
-    return jsonify({
-        "toplam": len(VERITABANI),
-        "veriler": VERITABANI
-    })
+    """Tüm verileri olduğu gibi gösterir"""
+    if not VERITABANI:
+        return jsonify({"hata": "Veritabanı boş"}), 503
+    
+    # Veriyi olduğu gibi gönder (eksiksiz)
+    if len(VERITABANI) == 1:
+        return jsonify(VERITABANI[0])
+    else:
+        return jsonify(VERITABANI)
 
 @app.route('/sorgula')
 def sorgula():
-    ad = request.args.get('ad', '').upper().strip()
-    soyad = request.args.get('soyad', '').upper().strip()
-    tc = request.args.get('tc', '').strip()
-    hatno = request.args.get('hatno', '').strip()
+    """Sorgu yapar ve eşleşen KAYDIN TAMAMINI gönderir"""
+    ad = request.args.get('ad', '').upper()
+    soyad = request.args.get('soyad', '').upper()
+    tc = request.args.get('tc', '')
+    hatno = request.args.get('hatno', '')
     
     if not VERITABANI:
-        return jsonify({"hata": "Veritabanı boş! turknetrinex.json dosyasını kontrol et."}), 503
+        return jsonify({"hata": "Veritabanı boş"}), 503
     
-    if ad and soyad:
-        sonuc = [m for m in VERITABANI 
-                 if m.get('AD', '').upper() == ad 
-                 and m.get('SOYAD', '').upper() == soyad]
-    elif tc:
-        sonuc = [m for m in VERITABANI if m.get('TC_KIMLIK') == tc]
-    elif hatno:
-        sonuc = [m for m in VERITABANI if m.get('HAT_NO') == hatno]
-    else:
-        return jsonify({
-            "hata": "Kullanım örnekleri:",
-            "ad_soyad": "/sorgula?ad=BEYZANUR&soyad=KOSEOGLU",
-            "tc": "/sorgula?tc=10001763200",
-            "hatno": "/sorgula?hatno=1780341975"
-        }), 400
+    # Her kayıtta arama yap
+    for kayit in VERITABANI:
+        if ad and soyad:
+            # Ad ve soyad eşleşmesi
+            if kayit.get('AD', '').upper() == ad and kayit.get('SOYAD', '').upper() == soyad:
+                return jsonify(kayit)  # TÜM VERİYİ GÖNDER
+        elif tc:
+            # TC eşleşmesi
+            if kayit.get('TC_KIMLIK') == tc:
+                return jsonify(kayit)  # TÜM VERİYİ GÖNDER
+        elif hatno:
+            # Hat no eşleşmesi
+            if kayit.get('HAT_NO') == hatno:
+                return jsonify(kayit)  # TÜM VERİYİ GÖNDER
     
-    return jsonify({
-        "bulunan": len(sonuc), 
-        "sonuclar": sonuc
-    })
+    return jsonify({"hata": "Kayıt bulunamadı"}), 404
 
-# POST metodları
 @app.route('/sorgu/adsoyad', methods=['POST'])
 def sorgu_adsoyad():
+    """POST ile ad soyad sorgusu - TÜM VERİYİ GÖNDER"""
     data = request.get_json()
     if not data:
         return jsonify({"hata": "JSON body gerekli"}), 400
+    
     ad = data.get('ad', '').upper()
     soyad = data.get('soyad', '').upper()
-    sonuc = [m for m in VERITABANI if m.get('AD', '').upper() == ad and m.get('SOYAD', '').upper() == soyad]
-    return jsonify({"bulunan": len(sonuc), "sonuclar": sonuc})
+    
+    for kayit in VERITABANI:
+        if kayit.get('AD', '').upper() == ad and kayit.get('SOYAD', '').upper() == soyad:
+            return jsonify(kayit)  # TÜM VERİYİ GÖNDER
+    
+    return jsonify({"hata": "Kayıt bulunamadı"}), 404
 
 @app.route('/sorgu/tc', methods=['POST'])
 def sorgu_tc():
+    """POST ile TC sorgusu - TÜM VERİYİ GÖNDER"""
     data = request.get_json()
     if not data:
         return jsonify({"hata": "JSON body gerekli"}), 400
+    
     tc = data.get('tc', '')
-    sonuc = [m for m in VERITABANI if m.get('TC_KIMLIK') == tc]
-    return jsonify({"bulunan": len(sonuc), "sonuclar": sonuc})
+    
+    for kayit in VERITABANI:
+        if kayit.get('TC_KIMLIK') == tc:
+            return jsonify(kayit)  # TÜM VERİYİ GÖNDER
+    
+    return jsonify({"hata": "Kayıt bulunamadı"}), 404
 
 @app.route('/sorgu/hatno', methods=['POST'])
 def sorgu_hatno():
+    """POST ile hat no sorgusu - TÜM VERİYİ GÖNDER"""
     data = request.get_json()
     if not data:
         return jsonify({"hata": "JSON body gerekli"}), 400
+    
     hatno = data.get('hatno', '')
-    sonuc = [m for m in VERITABANI if m.get('HAT_NO') == hatno]
-    return jsonify({"bulunan": len(sonuc), "sonuclar": sonuc})
+    
+    for kayit in VERITABANI:
+        if kayit.get('HAT_NO') == hatno:
+            return jsonify(kayit)  # TÜM VERİYİ GÖNDER
+    
+    return jsonify({"hata": "Kayıt bulunamadı"}), 404
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
